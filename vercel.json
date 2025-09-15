@@ -1,11 +1,8 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/**/*.js", "use": "@vercel/node" }
-  ],
+  "builds": [{ "src": "api/**/*.js", "use": "@vercel/node" }],
   "routes": [
-    { "src": "/api/oauth/start", "dest": "/api/oauth/start.js" },
-    { "src": "/api/oauth/callback", "dest": "/api/oauth/callback.js" },
-    { "src": "/.*", "dest": "/api/index.js" }
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/api/index.js" }
   ]
 }
