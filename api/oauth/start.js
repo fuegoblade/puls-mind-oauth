@@ -1,48 +1,35 @@
 // /api/oauth/start.js
 import crypto from 'crypto';
 
-const RAW = {
-  GARMIN_CONSUMER_KEY: process.env.GARMIN_CONSUMER_KEY || '',
-  GARMIN_CONSUMER_SECRET: process.env.GARMIN_CONSUMER_SECRET || '',
-  GARMIN_REQUEST_TOKEN_URL: process.env.GARMIN_REQUEST_TOKEN_URL
-    || 'https://connectapi.garmin.com/oauth-service/oauth/request_token',
-  GARMIN_AUTH_URL: process.env.GARMIN_AUTH_URL
-    || 'https://connect.garmin.com/oauthConfirm',
-  REDIRECT_URI: process.env.REDIRECT_URI || '',
-};
-
-// ořízni případné mezery/nové řádky
-const CFG = Object.fromEntries(Object.entries(RAW).map(([k, v]) => [k, v.trim()]));
 const {
   GARMIN_CONSUMER_KEY,
   GARMIN_CONSUMER_SECRET,
-  GARMIN_REQUEST_TOKEN_URL,
-  GARMIN_AUTH_URL,
   REDIRECT_URI,
-} = CFG;
+  GARMIN_AUTH_URL = 'https://connect.garmin.com/oauthConfirm',
+} = process.env;
 
-// RFC3986 safe encode (OAuth 1.0a ještě navíc ! ' ( ) *)
+// RFC3986-safe percent-encoding (navíc ! ' ( ) *)
 const enc = (s) =>
-  encodeURIComponent(s)
-    .replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
 
 const normalizeParams = (params) => {
   const pairs = [];
-  Object.keys(params).forEach((k) => {
+  for (const k of Object.keys(params)) {
     const v = params[k];
-    if (v === undefined || v === null) return;
-    if (Array.isArray(v)) v.forEach((i) => pairs.push([enc(k), enc(String(i))]));
+    if (v === undefined || v === null) continue;
+    if (Array.isArray(v)) v.forEach(item => pairs.push([enc(k), enc(String(item))]));
     else pairs.push([enc(k), enc(String(v))]);
-  });
-  pairs.sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) : a[0] < b[0] ? -1 : 1));
+  }
+  pairs.sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) : (a[0] < b[0] ? -1 : 1)));
   return pairs.map(([k, v]) => `${k}=${v}`).join('&');
 };
 
 const baseString = (method, url, params) =>
   `${method.toUpperCase()}&${enc(url)}&${enc(normalizeParams(params))}`;
 
+// ⬇️ KLÍČ BEZ percent-encodingu (důležité pro Garmin)
 const sign = (base, consumerSecret, tokenSecret = '') =>
-  crypto.createHmac('sha1', `${enc(consumerSecret)}&${enc(tokenSecret)}`).update(base).digest('base64');
+  crypto.createHmac('sha1', `${consumerSecret}&${tokenSecret}`).update(base).digest('base64');
 
 export default async function handler(req, res) {
   try {
@@ -54,8 +41,9 @@ export default async function handler(req, res) {
     }
 
     const method = 'POST';
-    const url = GARMIN_REQUEST_TOKEN_URL;
+    const url = 'https://connectapi.garmin.com/oauth-service/oauth/request_token';
 
+    // OAuth1 params — callback MUSÍ být v podpisu
     const oauth = {
       oauth_callback: REDIRECT_URI,
       oauth_consumer_key: GARMIN_CONSUMER_KEY,
@@ -68,6 +56,7 @@ export default async function handler(req, res) {
     const base = baseString(method, url, oauth);
     const oauth_signature = sign(base, GARMIN_CONSUMER_SECRET);
 
+    // Authorization header (hodnoty percent-encoded a seřazené)
     const authHeader =
       'OAuth ' +
       Object.entries({ ...oauth, oauth_signature })
@@ -75,22 +64,17 @@ export default async function handler(req, res) {
         .map(([k, v]) => `${enc(k)}="${enc(v)}"`)
         .join(', ');
 
-    // Pošleme oauth_callback i v těle (některé brány to vyžadují)
-    const body = new URLSearchParams({ oauth_callback: REDIRECT_URI }).toString();
-
-    const r = await fetch(url, {
+    const resp = await fetch(url, {
       method,
       headers: {
         Authorization: authHeader,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': String(body.length),
+        // někteří poskytovatelé jsou citliví na zbytečný Content-Type bez těla; vynecháme
       },
-      body,
     });
 
-    const text = await r.text();
-    if (!r.ok) {
-      return res.status(r.status).json({ error: 'request_token_failed', detail: text });
+    const text = await resp.text();
+    if (!resp.ok) {
+      return res.status(401).json({ error: 'request_token_failed', detail: text });
     }
 
     const params = Object.fromEntries(new URLSearchParams(text));
@@ -99,7 +83,7 @@ export default async function handler(req, res) {
     }
 
     return res.redirect(302, `${GARMIN_AUTH_URL}?oauth_token=${encodeURIComponent(params.oauth_token)}`);
-  } catch (err) {
-    return res.status(500).json({ error: 'internal_error', detail: String(err) });
+  } catch (e) {
+    return res.status(500).json({ error: 'internal_error', detail: String(e) });
   }
 }
