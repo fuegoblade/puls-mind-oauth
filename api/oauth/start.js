@@ -1,6 +1,6 @@
 // /api/oauth/start.js
 export default function handler(req, res) {
-  const base = process.env.GARMIN_AUTH_URL; // z Garmin Portalu (Authorization URL)
+  const base = process.env.GARMIN_AUTH_URL; // např. https://connect.garmin.com/oauthConfirm
   if (!base) {
     return res.status(500).json({ error: "GARMIN_AUTH_URL is not set" });
   }
