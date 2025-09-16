@@ -1,4 +1,4 @@
-// /api/oauth/start.js
+// /api/oauth/callback.js
 import crypto from "crypto";
 
 function percentEncode(str) {
@@ -13,10 +13,9 @@ function buildOAuthHeader({ url, method, extraParams = {}, tokenSecret = "" }) {
     oauth_signature_method: "HMAC-SHA1",
     oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
     oauth_version: "1.0",
-    ...extraParams, // např. oauth_callback nebo oauth_token, oauth_verifier
+    ...extraParams,
   };
 
-  // base string
   const normParams = Object.keys(params)
     .sort()
     .map(k => `${percentEncode(k)}=${percentEncode(params[k])}`)
@@ -36,10 +35,7 @@ function buildOAuthHeader({ url, method, extraParams = {}, tokenSecret = "" }) {
     .update(baseString)
     .digest("base64");
 
-  const headerParams = {
-    ...params,
-    oauth_signature: signature,
-  };
+  const headerParams = { ...params, oauth_signature: signature };
 
   const authHeader =
     "OAuth " +
@@ -51,45 +47,51 @@ function buildOAuthHeader({ url, method, extraParams = {}, tokenSecret = "" }) {
   return authHeader;
 }
 
+function getCookie(req, name) {
+  const raw = req.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const [k, v] = part.trim().split("=");
+    if (k === name) return decodeURIComponent(v || "");
+  }
+  return "";
+}
+
 export default async function handler(req, res) {
   try {
-    const requestUrl = process.env.GARMIN_REQUEST_TOKEN_URL;
-    const callbackUrl = process.env.CALLBACK_URL;
-
-    if (!requestUrl || !callbackUrl) {
-      return res.status(500).json({ error: "Missing env (REQUEST_TOKEN_URL/CALLBACK_URL)" });
+    const { oauth_token, oauth_verifier } = req.query || {};
+    if (!oauth_token || !oauth_verifier) {
+      return res.status(400).json({ error: "invalid_request", hint: "expected oauth_token & oauth_verifier" });
     }
 
+    // vyzvedni tajný request token secret z cookie
+    const rtSecret = getCookie(req, "rt_secret");
+    if (!rtSecret) return res.status(400).json({ error: "missing_request_token_secret" });
+
+    const accessUrl = process.env.GARMIN_ACCESS_TOKEN_URL;
+
     const Authorization = buildOAuthHeader({
-      url: requestUrl,
+      url: accessUrl,
       method: "POST",
-      extraParams: { oauth_callback: callbackUrl },
+      extraParams: { oauth_token, oauth_verifier },
+      tokenSecret: rtSecret,
     });
 
-    const rsp = await fetch(requestUrl, {
+    const rsp = await fetch(accessUrl, {
       method: "POST",
       headers: { Authorization },
     });
 
-    const text = await rsp.text(); // např. "oauth_token=...&oauth_token_secret=...&oauth_callback_confirmed=true"
-    if (!rsp.ok) return res.status(502).json({ error: "request_token_failed", detail: text });
+    const text = await rsp.text(); // "oauth_token=...&oauth_token_secret=...&..."
+    if (!rsp.ok) return res.status(502).json({ error: "access_token_failed", detail: text });
 
     const params = Object.fromEntries(new URLSearchParams(text));
-    const { oauth_token, oauth_token_secret } = params;
-
-    if (!oauth_token || !oauth_token_secret) {
-      return res.status(502).json({ error: "bad_request_token_response", detail: text });
-    }
-
-    // ulož tajně request token secret do krátkodobého cookie (na výměnu v callbacku)
-    res.setHeader("Set-Cookie", `rt_secret=${encodeURIComponent(oauth_token_secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=300`);
-
-    const authorizeBase = process.env.GARMIN_AUTHORIZE_URL || "https://connect.garmin.com/oauthConfirm";
-    const redirectTo = `${authorizeBase}?oauth_token=${encodeURIComponent(oauth_token)}`;
-
-    res.writeHead(302, { Location: redirectTo });
-    res.end();
+    // POZOR: tady je máš – ulož si je bezpečně (DB/KV). Zatím je jen ukážeme maskované.
+    res.status(200).json({
+      message: "Garmin OAuth connected 🎉",
+      access_token: (params.oauth_token || "").slice(0, 6) + "…",
+      access_token_secret: (params.oauth_token_secret || "").slice(0, 6) + "…",
+    });
   } catch (e) {
-    res.status(500).json({ error: "start_exception", detail: e?.message });
+    res.status(500).json({ error: "callback_exception", detail: e?.message });
   }
 }
