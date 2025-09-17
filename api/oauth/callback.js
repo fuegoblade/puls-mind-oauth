@@ -44,10 +44,10 @@ export default async function handler(req, res) {
     }
 
     // tělo požadavku podle Garmin OAuth2 PKCE
-    const body = new URLSearchParams({
+    const params = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: GARMIN_CLIENT_ID,
-      // client_secret se dává do Basic auth headeru, ale Garmin toleruje i v body — necháme jen v headeru
+      client_secret: GARMIN_CLIENT_SECRET,   // necháme i v body (někdy vyžadují)
       code,
       code_verifier: codeVerifier,
       redirect_uri: REDIRECT_URI,
@@ -60,9 +60,10 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
         'Authorization': `Basic ${basic}`,
       },
-      body,
+      body: params.toString(), // pošli jako plain form-urlencoded string
     });
 
     // smaž krátké cookies (už nejsou potřeba)
@@ -80,7 +81,7 @@ export default async function handler(req, res) {
       return res.status(resp.status).json({ error: 'token_exchange_failed', detail: data });
     }
 
-    // TODO: v produkci si tokeny ulož (DB/kv). Teď jen vracíme shrnutí.
+    // (demo) jen vracíme shrnutí
     return res.status(200).json({
       ok: true,
       token_type: data.token_type,
