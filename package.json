@@ -1,20 +1,10 @@
 {
   "name": "puls-mind-oauth",
-  "version": "1.0.0",
-  "description": "OAuth server for Garmin integration with PulseMind™",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
   "scripts": {
-    "start": "node api/oauth/start.js",
-    "dev": "vercel dev"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "oauth": "^0.10.0",
-    "dotenv": "^16.3.1"
-  },
-  "engines": {
-    "node": ">=18.x"
-  },
-  "author": "FuegoBlade",
-  "license": "MIT"
+    "build": "echo Using Vercel build",
+    "start": "node server.js"
+  }
 }
