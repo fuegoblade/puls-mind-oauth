@@ -1,0 +1,9 @@
+{
+  "name": "puls-mind-oauth",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "oauth": "^0.9.15"
+  }
+}
