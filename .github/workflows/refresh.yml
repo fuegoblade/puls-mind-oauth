@@ -3,7 +3,7 @@ name: Refresh Garmin access token
 on:
   schedule:
     - cron: "*/55 * * * *"   # běží každých 55 minut (UTC)
-  workflow_dispatch: {}       # možnost spustit ručně v Actions
+  workflow_dispatch: {}      # možnost spustit ručně v Actions
 
 jobs:
   refresh:
@@ -12,14 +12,16 @@ jobs:
     concurrency:
       group: garmin-refresh
       cancel-in-progress: true
+
     steps:
       - name: Call refresh endpoint
         run: |
           set -e
           CURL_URL="${{ secrets.REFRESH_URL }}"
           if [ -z "$CURL_URL" ]; then
-            CURL_URL="https://puls-mind-oauth.vercel.app/api/cron/refresh"
+            CURL_URL="https://puls-mind-oauth.vercel.app/api/oauth/refresh"
           fi
+
           echo "POST $CURL_URL"
           http_code=$(curl -sS -X POST -o resp.json -w "%{http_code}" "$CURL_URL")
           echo "HTTP $http_code"
